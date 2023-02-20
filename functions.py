@@ -22,7 +22,7 @@ def get_dataframe():
     # Add spam classification column to attribute names
     spam_names.append("spam_class")
 
-    # Create dataframe with data and attributes names
+    # Create dataframe with data and attribute names
     spam_data = pd.read_csv(file_path_data, header=None)
     spam_data.columns = spam_names
 
