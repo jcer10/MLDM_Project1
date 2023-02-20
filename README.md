@@ -4,4 +4,5 @@ The objective of this report is to apply the methods learned in the first sectio
 ### Data Set
 The data set was obtained from the UC Irvine Machine Learning Repository. The specific data set can be downloaded from the following link https://archive.ics.uci.edu/ml/machine-learning-databases/spambase/. The uncompressed zip folder can be directly added to the working directory.
 
-The function "get_df()" is in charge of creating a pandas dataframe from the files inside the spambase folder (the spambase.data and spambase.names). The function df_to_arrays creates a python dict containing the standard representation variables used in the course, including: X, attributes, N, M 
+### Data Handling
+The function `get_df()` is in charge of creating a pandas dataframe from the files inside the spambase folder (the spambase.data and spambase.names). The function `df_to_arrays()` creates a python dict containing the standard representation variables used in the course (including: X, attributes, N, M, y, classNames, C). Using this representation makes it easy to apply the various tools in the 02450 Toolbox on a this dataset.
