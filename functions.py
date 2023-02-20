@@ -4,7 +4,7 @@ import pandas as pd
 
 
 
-def get_spam_data(data_dir):
+def get_df(data_dir):
     '''
     Function to create a dataframe from the spam data set, by cleaning up and merging the values and the attribute names
     '''
@@ -28,11 +28,43 @@ def get_spam_data(data_dir):
     spam_names.append("spam_class")
 
     # Create dataframe with data and attribute names
-    spam_data = pd.read_csv(file_path_data, header=None)
-    spam_data.columns = spam_names
+    spam_df = pd.read_csv(file_path_data, header=None)
+    spam_df.columns = spam_names
 
-    print(type(spam_data))
+    return spam_df
 
 
-    return spam_data
+
+def df_to_arrays(df):
+    '''
+    Function that converts the data frame into the standard form data and stores the values in a dict
+    '''
+
+    # Extract values from df in matrix form
+    raw_data = df.values
+
+    # Separate last column that correspond to the class index (y vector) from the data matrix (X vector)
+    attributes = len(raw_data[0])
+    cols = range(0, attributes - 1)
+
+    X = raw_data[:, cols]
+    y = raw_data[:, -1]
+    # Obtain dimensions of data matrix
+    N, M = X.shape
+
+    # Extract the attribute names from df
+    attributeNames = np.asarray(df.columns[cols])
+
+    # Define class names and number of classes
+    classNames = ["non_spam", "spam"]
+    C = len(classNames)
+
+    # Create data dict
+    data_dict = {"X": X, "attributeNames": attributeNames, "N": N, "M": M, "y": y, "classNames": classNames, "C": C}
+
+    return data_dict
+    
+
+
+    
 
