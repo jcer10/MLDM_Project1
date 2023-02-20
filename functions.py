@@ -31,6 +31,8 @@ def get_spam_data(data_dir):
     spam_data = pd.read_csv(file_path_data, header=None)
     spam_data.columns = spam_names
 
+    print(type(spam_data))
+
 
     return spam_data
 
