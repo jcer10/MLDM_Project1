@@ -4,7 +4,7 @@ import pandas as pd
 
 
 
-def get_dataframe(data_dir):
+def get_spam_data(data_dir):
     '''
     Function to create a dataframe from the spam data set, by cleaning up and merging the values and the attribute names
     '''
