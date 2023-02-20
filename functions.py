@@ -13,10 +13,14 @@ def get_spam_data(data_dir):
     file_path_data = data_dir + "/spambase.data"
     file_path_names = data_dir + "/spambase.names"
 
-    # Create array with attribute names
+    # Get attributes from spambase.names by ignoring content that does not include the 57 attribute names (located at the last 57 lines)
     spam_names_messy = open(file_path_names).readlines()
-    spam_names = []
+    first_line = len(spam_names_messy) - 57
+    last_line = len(spam_names_messy)
+    spam_names_messy = spam_names_messy[first_line:last_line]
 
+    # Clean up lines and create array with attributes
+    spam_names = []
     for i in range(len(spam_names_messy)):
         spam_names.append(spam_names_messy[i].replace("continuous.\n", "").translate({ord(i): None for i in ': '}))
 
