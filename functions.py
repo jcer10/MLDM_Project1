@@ -4,11 +4,12 @@ import pandas as pd
 
 
 
-def get_dataframe():
-
-    # Specify path of data folder
-    data_dir = "./spambase"
-
+def get_dataframe(data_dir):
+    '''
+    Function to create a dataframe from the spam data set, by cleaning up and merging the values and the attribute names
+    '''
+    
+    # Specify paths of the data and names, given the path of the spam folder
     file_path_data = data_dir + "/spambase.data"
     file_path_names = data_dir + "/spambase.names"
 
