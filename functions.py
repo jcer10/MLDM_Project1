@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from scipy.linalg import svd
+from matplotlib.pyplot import figure, plot, title, xlabel, ylabel, show, legend
 
 
 
@@ -63,6 +65,63 @@ def df_to_arrays(df):
     data_dict = {"X": X, "attributeNames": attributeNames, "N": N, "M": M, "y": y, "classNames": classNames, "C": C}
 
     return data_dict
+
+def pc_variance_plot(data_dict):
+    
+    # Subtract mean value from data
+    Y = data_dict["X"] - np.ones((len(data_dict["X"]),1))*data_dict["X"].mean(axis=0)
+
+    # PCA by computing SVD of Y
+    U,S,V = svd(Y,full_matrices=False)
+
+    # Compute variance explained by principal components
+    rho = (S*S) / (S*S).sum() 
+
+    threshold = 0.9
+
+    # Plot variance explained
+    plt.figure()
+    plt.plot(range(1,11),rho[:10],'x-') # using only first 10 values
+    plt.plot(range(1,11),np.cumsum(rho)[:10],'o-') # using only first 10 values
+    plt.plot([1, len(rho)], [threshold, threshold],'k--')
+    plt.title('Variance explained by principal components')
+    plt.xlabel('Principal component (first 10)')
+    plt.ylabel('Variance explained')
+    plt.legend(['Individual', 'Cumulative', 'Threshold'])
+    plt.grid()
+    plt.xlim(1, 10) # limit x-axis to 10 values
+    plt.show()
+    
+def pc_data_plot(data_dict):
+    # Subtract mean value from data
+    Y = data_dict["X"] - np.ones((len(data_dict["X"]),1))*data_dict["X"].mean(axis=0)
+
+    # PCA by computing SVD of Y
+    U,S,Vh = svd(Y,full_matrices=False)
+    # scipy.linalg.svd returns "Vh", which is the Hermitian (transpose)
+    # of the vector V. So, for us to obtain the correct V, we transpose:
+    V = Vh.T
+    # Project the centered data onto principal component space
+    Z = Y @ V
+
+    # Indices of the principal components to be plotted
+    i = 0
+    j = 1
+
+    # Plot PCA of the data
+    f = figure()
+    title('Spam data: PCA')
+    #Z = array(Z)
+    for c in range(len(data_dict["attributeNames"])):
+        # select indices belonging to class c:
+        class_mask = data_dict["y"]==c
+        plot(Z[class_mask,i], Z[class_mask,j], 'o', alpha=.5)
+    legend(data_dict["classNames"])
+    xlabel('PC{0}'.format(i+1))
+    ylabel('PC{0}'.format(j+1))
+
+    # Output result to screen
+    show()       
     
 
 
