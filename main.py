@@ -10,3 +10,6 @@ spam_data = df_to_arrays(spam_df)
 pc_variance_plot(spam_data)
 
 pc_data_plot(spam_data)
+
+# Create df with basic summary statistics from data set
+summary_stats = spam_df.describe().drop("count")
