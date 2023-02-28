@@ -66,10 +66,11 @@ def df_to_arrays(df):
 
     return data_dict
 
+
 def pc_variance_plot(data_dict):
     
     # Subtract mean value from data
-    Y = data_dict["X"] - np.ones((len(data_dict["X"]),1))*data_dict["X"].mean(axis=0)
+    Y = (data_dict["X"] - np.ones((data_dict["N"],1))*data_dict["X"].mean(axis=0))/data_dict["X"].std(axis=0)
 
     # PCA by computing SVD of Y
     U,S,V = svd(Y,full_matrices=False)
@@ -81,20 +82,19 @@ def pc_variance_plot(data_dict):
 
     # Plot variance explained
     plt.figure()
-    plt.plot(range(1,11),rho[:10],'x-') # using only first 10 values
-    plt.plot(range(1,11),np.cumsum(rho)[:10],'o-') # using only first 10 values
-    plt.plot([1, len(rho)], [threshold, threshold],'k--')
-    plt.title('Variance explained by principal components')
-    plt.xlabel('Principal component (first 10)')
-    plt.ylabel('Variance explained')
-    plt.legend(['Individual', 'Cumulative', 'Threshold'])
+    plt.plot(range(1,len(rho)+1),rho,'x-')
+    plt.plot(range(1,len(rho)+1),np.cumsum(rho),'o-')
+    plt.plot([1,len(rho)],[threshold, threshold],'k--')
+    plt.title('Variance explained by principal components');
+    plt.xlabel('Principal component');
+    plt.ylabel('Variance explained');
+    plt.legend(['Individual','Cumulative','Threshold'])
     plt.grid()
-    plt.xlim(1, 10) # limit x-axis to 10 values
     plt.show()
     
 def pc_data_plot(data_dict):
     # Subtract mean value from data
-    Y = data_dict["X"] - np.ones((len(data_dict["X"]),1))*data_dict["X"].mean(axis=0)
+    Y = (data_dict["X"] - np.ones((data_dict["N"],1))*data_dict["X"].mean(axis=0))/data_dict["X"].std(axis=0)
 
     # PCA by computing SVD of Y
     U,S,Vh = svd(Y,full_matrices=False)
@@ -122,7 +122,7 @@ def pc_data_plot(data_dict):
 
     # Output result to screen
     show()       
-    
+
 
 
     

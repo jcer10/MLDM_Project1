@@ -10,3 +10,4 @@ spam_data = df_to_arrays(spam_df)
 pc_variance_plot(spam_data)
 
 pc_data_plot(spam_data)
+
