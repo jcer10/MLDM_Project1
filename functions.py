@@ -68,8 +68,8 @@ def df_to_arrays(df):
 
 
 def pc_variance_plot(data_dict):
-    
-    # Subtract mean value from data
+    #test 
+    # Subtract mean value from data 
     Y = (data_dict["X"] - np.ones((data_dict["N"],1))*data_dict["X"].mean(axis=0))/data_dict["X"].std(axis=0)
 
     # PCA by computing SVD of Y
