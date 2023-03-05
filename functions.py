@@ -134,6 +134,9 @@ def box_plot(data_dict):
     boxplot(data)
     xlabel("Attributes")
     show()
+    
+    
+
 
 #Box plot for only the last 3 attributes
 def box_plot_last_attributes(data_dict):
@@ -168,7 +171,12 @@ def correlation_heatmap(data_dict):
         correlation_data[data_dict['attributeNames'][i]] = correlation_value
 
     df = pd.DataFrame(correlation_data).corr()
-    sns.heatmap(df, annot=True, annot_kws={"size": 7},fmt='.2f',)
+    ax = sns.heatmap(df)
+    ax.set_xticks(np.arange(0.5, len(df.columns), 5))
+    ax.set_xticklabels(np.arange(0, len(df.columns)+1, 5))
+    ax.set_yticks(np.arange(0.5, len(df.columns), 5))
+    ax.set_yticklabels(np.arange(0, len(df.columns)+1, 5))
+    title('Correlation heatmap between feauters')
     show()
 
 
@@ -230,15 +238,15 @@ def pca_coefffs(data_dict):
 
 def attributes_histogram(data_dict):
     figure()
-    rows = np.floor(np.sqrt(len(data_dict['attributeNames'])))
-    columns = np.ceil(float(len(data_dict['attributeNames']))/rows)
-
-    for i in range(len(data_dict['attributeNames'])):
+    rows = np.floor(np.sqrt(len(data_dict['attributeNames'][0:8])))
+    columns = np.ceil(float(len(data_dict['attributeNames'][0:8]))/rows)
+    for i in range(len(data_dict['attributeNames'][0:8])):
         subplot(int(rows),int(columns),i+1)
         hist(data_dict['X'][:,i],log=True)
         #xlabel(str(i))
         #xlabel(data_dict['attributeNames'][i])
-        #if i==0: title('Histogram of every Attribute')
+        if i==0: title('Historgram of 8 word frequency attributes') 
+    plt.subplots_adjust(wspace=0.5)
     show()
 
     #show last 3 attributes
@@ -248,6 +256,7 @@ def attributes_histogram(data_dict):
     for i in range(3):
         subplot(int(rows),int(columns),i+1)
         hist(data_dict['X'][:,-4+i:-3+i],log=True)
-        xlabel(data_dict['attributeNames'][-3+i])
+        xlabel(data_dict['attributeNames'][-3+i], fontsize=8)
         if i == 0: title('Histogram of last 3 Attribute')
+    plt.subplots_adjust(wspace=1)
     show()
