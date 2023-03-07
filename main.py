@@ -28,9 +28,9 @@ summary_stats = spam_df.describe().drop("count")
 
 
 #Correlation matrix
-correlation_heatmap(spam_data)
+#correlation_heatmap(spam_data)
 
 #The coefficients of the first 3 components for each attribute
 pca_coefffs(spam_data)
 #Plot histograms for all the attributes
-attributes_histogram(spam_data)
+#attributes_histogram(spam_data)

@@ -204,7 +204,8 @@ def pca_coefffs(data_dict):
     for i in components:
         bar(rang + i * bar_width, V[:48, i], width=bar_width)
     #xticks(rang + bar_width, data_dict['attributeNames'][:48], rotation=90)
-    xticks(rang + bar_width, [i+1 for i in range(48)], rotation=0)
+    #xticks(rang + bar_width, [i+1 for i in range(48)], rotation=0)
+    xticks(rang[::5] + bar_width, [i for i in range(0, len(rang), 5)], rotation=0)
     xlabel('Attributes')
     ylabel('Component coefficients values')
     legend(legend_stings)
@@ -245,7 +246,7 @@ def attributes_histogram(data_dict):
         hist(data_dict['X'][:,i],log=True)
         #xlabel(str(i))
         #xlabel(data_dict['attributeNames'][i])
-        if i==0: title('Historgram of 8 word frequency attributes') 
+        if i==0: title('Historgrams of 8 word frequency attributes') 
     plt.subplots_adjust(wspace=0.5)
     show()
 
@@ -257,6 +258,6 @@ def attributes_histogram(data_dict):
         subplot(int(rows),int(columns),i+1)
         hist(data_dict['X'][:,-4+i:-3+i],log=True)
         xlabel(data_dict['attributeNames'][-3+i], fontsize=8)
-        if i == 0: title('Histogram of last 3 Attribute')
+        if i == 0: title('Histograms of 3 capital_run attributes')
     plt.subplots_adjust(wspace=1)
     show()
