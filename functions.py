@@ -3,8 +3,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.linalg import svd
 from matplotlib.pyplot import figure, plot, title, xlabel, ylabel, show, legend,boxplot,bar,xticks,grid,subplot,hist
+from matplotlib.pylab import semilogx
 import seaborn as sns
+from toolbox_02450 import rlr_validate, correlated_ttest, train_neural_net, draw_neural_net
 
+import torch
+from sklearn import model_selection
+from sklearn.model_selection import train_test_split
+from matplotlib.pylab import loglog
 from scipy.stats import zscore
 
 def get_df(data_dir):
@@ -67,197 +73,392 @@ def df_to_arrays(df):
     return data_dict
 
 
-def pc_variance_plot(data_dict):
-    # test
-    # Subtract mean value from data
-    Y = (data_dict["X"] - np.ones((data_dict["N"], 1)) * data_dict["X"].mean(axis=0)) / data_dict["X"].std(axis=0)
+def regression_part_a(data_dict):
+    #The attribute (word_freq_dirct) that we are going to use as 'y' for the regression
+    pred_index=39
 
-    # PCA by computing SVD of Y
-    U, S, V = svd(Y, full_matrices=False)
+    X=(data_dict["X"] - np.ones((data_dict["N"], 1)) * data_dict["X"].mean(axis=0)) / data_dict["X"].std(axis=0)
+    y=X[:,pred_index]
+    #remove the attribute from X
+    X=np.delete(X,pred_index,axis=1)
 
-    # Compute variance explained by principal components
-    rho = (S * S) / (S * S).sum()
+    attributeNames=data_dict["attributeNames"]
+    attributeNames=np.delete(attributeNames,pred_index,axis=0)
 
-    threshold = 0.9
-
-    # Plot variance explained
-    plt.figure()
-    plt.plot(range(1, len(rho) + 1), rho, 'x-')
-    plt.plot(range(1, len(rho) + 1), np.cumsum(rho), 'o-')
-    plt.plot([1, len(rho)], [threshold, threshold], 'k--')
-    plt.title('Variance explained by principal components');
-    plt.xlabel('Principal component');
-    plt.ylabel('Variance explained');
-    plt.legend(['Individual', 'Cumulative', 'Threshold'])
-    plt.grid()
-    plt.show()
+    #create a list of lambdas
+    lambdas = np.power(2.,range(-10,30))
 
 
-def pc_data_plot(data_dict):
-    # Subtract mean value from data
-    Y = (data_dict["X"] - np.ones((data_dict["N"], 1)) * data_dict["X"].mean(axis=0)) / data_dict["X"].std(axis=0)
+    N_attributes = X.shape[1]
 
-    # PCA by computing SVD of Y
-    U, S, Vh = svd(Y, full_matrices=False)
-    # scipy.linalg.svd returns "Vh", which is the Hermitian (transpose)
-    # of the vector V. So, for us to obtain the correct V, we transpose:
-    V = Vh.T
-    # Project the centered data onto principal component space
-    Z = Y @ V
+    #weights
+    weights_rlr = np.empty((N_attributes, 1))
 
-    # Indices of the principal components to be plotted
-    i = 0
-    j = 1
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.30, shuffle=True)
 
-    # Plot PCA of the data
-    f = figure()
-    title('Spam data: PCA')
-    # Z = array(Z)
-    for c in range(len(data_dict["attributeNames"])):
-        # select indices belonging to class c:
-        class_mask = data_dict["y"] == c
-        plot(Z[class_mask, i], Z[class_mask, j], 'o', alpha=.5)
-    legend(data_dict["classNames"])
-    xlabel('PC{0}'.format(i + 1))
-    ylabel('PC{0}'.format(j + 1))
+    validation_folds = 10
+    print("Using cross-validation with ", validation_folds," folds")
+    val_error_opt, opt_lambda, mean_w_vs_lambda, train_error_lambda, test_error_lambda = rlr_validate(X_train,
+                                                                                                      y_train,
+                                                                                                      lambdas,
+                                                                                                      validation_folds)
 
-    # Output result to screen
-    show()
+    Xtrans_y = X_train.T @ y_train
+    Xtrans_X = X_train.T @ X_train
 
+    # Estimate weights of attributes considering the optimal lambda
+    lambda_I = opt_lambda * np.eye(N_attributes)
+    lambda_I[0, 0] = 0  # Do no regularize the bias term
+    weights_rlr[:, 0] = np.linalg.solve(Xtrans_X + lambda_I, Xtrans_y).squeeze()
 
+    # MSE with optimal lambda
+    Training_error_rlr = np.square(y_train - X_train @ weights_rlr[:, 0]).sum(axis=0) / y_train.shape[0]
+    Test_error_rlr = np.square(y_test - X_test @ weights_rlr[:, 0]).sum(axis=0) / y_test.shape[0]
 
-# Attributes boxplot
-def box_plot(data_dict):
-    data = data_dict['X']
-    figure(figsize=(12,6))
-    title('Boxplot')
-    boxplot(data)
-    xlabel("Attributes")
-    show()
-    
-    
+    print("Best lambda: ", opt_lambda, " | Error: ", Test_error_rlr)
 
+    print('Linear weights:')
+    for m in range(N_attributes):
+        print(attributeNames[m], np.round(weights_rlr[m, 0], ))
 
-#Box plot for only the last 3 attributes
-def box_plot_last_attributes(data_dict):
-    data = data_dict['X']
-    last_attributes=data[:,54:57]
+    # Display the results
     figure()
-    title('Boxplot of the last 3 attributes')
-    boxplot(last_attributes)
-    xlabel("Attributes")
-    show()
-
-#boxplot with standardized data
-def box_plot_standardized(data_dict):
-    figure(figsize=(12, 6))
-    title('Boxplot (standardized)')
-    xlabel("Attributes")
-    data = (data_dict["X"] - np.ones((data_dict["N"], 1)) * data_dict["X"].mean(axis=0)) / data_dict["X"].std(axis=0)
-    boxplot(data)
-    show()
-
-
-def correlation_heatmap(data_dict):
-    correlation_data = {}
-    for i in range(len(data_dict['attributeNames'])):
-        correlation_value = []
-        for j in range(len(data_dict['attributeNames'])):
-            pccs = np.corrcoef(list(data_dict['X'][:,i]),list(data_dict['X'][:,j]))[0][1]
-            correlation_value.append(float(pccs))
-            if abs(pccs) >= 0.99 or abs(pccs) < 0.5:
-                continue
-
-        correlation_data[data_dict['attributeNames'][i]] = correlation_value
-
-    df = pd.DataFrame(correlation_data).corr()
-    ax = sns.heatmap(df)
-    ax.set_xticks(np.arange(0.5, len(df.columns), 5))
-    ax.set_xticklabels(np.arange(0, len(df.columns)+1, 5))
-    ax.set_yticks(np.arange(0.5, len(df.columns), 5))
-    ax.set_yticklabels(np.arange(0, len(df.columns)+1, 5))
-    title('Correlation heatmap between feauters')
-    show()
-
-
-# Display the components coefficients for the first 3 components
-def pca_coefffs(data_dict):
-    # Normalize data
-    Y = (data_dict["X"] - np.ones((data_dict["N"], 1)) * data_dict["X"].mean(axis=0)) / data_dict["X"].std(axis=0)
-
-    # PCA by computing SVD of Y
-    U, S, Vh = svd(Y, full_matrices=False)
-    # scipy.linalg.svd returns "Vh", which is the Hermitian (transpose)
-    # of the vector V. So, for us to obtain the correct V, we transpose:
-    V = Vh.T
-    # Project the centered data onto principal component space
-    Z = Y @ V
-
-    #choose the first 3 components
-    components = [0, 1, 2]
-
-    legend_stings = ['PC' + str(e + 1) for e in components]
-    bar_width = .2
-
-    #first 48 attributes
-    rang = np.arange(1, len(data_dict['attributeNames'][:48]) + 1)
-    for i in components:
-        bar(rang + i * bar_width, V[:48, i], width=bar_width)
-    #xticks(rang + bar_width, data_dict['attributeNames'][:48], rotation=90)
-    #xticks(rang + bar_width, [i+1 for i in range(48)], rotation=0)
-    xticks(rang[::5] + bar_width, [i for i in range(0, len(rang), 5)], rotation=0)
-    xlabel('Attributes')
-    ylabel('Component coefficients values')
-    legend(legend_stings)
+    title('Optimal lambda: 1e{0}'.format(np.log10(opt_lambda)))
+    loglog(lambdas, train_error_lambda.T, 'b.-', lambdas, test_error_lambda.T, 'r.-')
+    xlabel('Regularization factor')
+    ylabel('Squared error (crossvalidation)')
+    legend(['Train error', 'Validation error'])
     grid()
-    title('PCA Components Coefficients')
     show()
 
-    #next 6 attributes
-    rang = np.arange(1, len(data_dict['attributeNames'][48:54]) + 1)
-    for i in components:
-        bar(rang + i * bar_width, V[48:54, i], width=bar_width)
-    xticks(rang + bar_width, data_dict['attributeNames'][48:54], rotation=90)
-    xlabel('Attributes')
-    ylabel('Component coefficients values')
-    legend(legend_stings)
-    grid()
-    title('PCA Components Coefficients')
-    show()
 
-    #last 3 attributes
-    rang = np.arange(1, len(data_dict['attributeNames'][-3:]) + 1)
-    for i in components:
-        bar(rang + i * bar_width, V[-3:, i], width=bar_width)
-    xticks(rang + bar_width, data_dict['attributeNames'][-3:], rotation=45)
-    xlabel('Attributes')
-    ylabel('Component coefficients values')
-    legend(legend_stings)
-    grid()
-    title('PCA Components Coefficients')
-    show()
+def ann_inner_folds(X, y, h_range, cvf = 10):
+    CV = model_selection.KFold(cvf, shuffle=True)
+    N_attributes = X.shape[1]
+    w = np.empty((N_attributes, cvf, len(h_range)))
+    train_error = np.empty((cvf, len(h_range)))
+    test_error = np.empty((cvf, len(h_range)))
+    f = 0
+    for train_index, test_index in CV.split(X, y):
+        X_train = torch.Tensor(X[train_index])
+        y_train = torch.Tensor(y[train_index])
+        X_test = torch.Tensor(X[test_index])
+        y_test = torch.Tensor(y[test_index])
 
-def attributes_histogram(data_dict):
+        for ind in range(0, len(h_range)):
+            model = lambda: torch.nn.Sequential(
+                torch.nn.Linear(N_attributes, h_range[ind]),
+                torch.nn.Tanh(),  # activation function,
+                torch.nn.Linear(h_range[ind], 1))
+            loss = torch.nn.MSELoss()
+            net, final_loss, learning_curve = train_neural_net(model,loss,X=X_train,y=y_train,n_replicates=1,max_iter=10000)
+
+            #class labes
+            y_train_est = net(X_train).detach().numpy()
+            y_test_est = net(X_test).detach().numpy()
+
+            train_error[f, ind] = np.square(y_train - y_train_est).sum(axis=0) / y_train.shape[0]
+            test_error[f, ind] = np.square(y_test - y_test_est).sum(axis=0) / y_test.shape[0]
+
+        f = f + 1
+
+    optimal_h = h_range[np.argmin(np.mean(test_error, axis=0))]
+
+    return optimal_h
+
+
+def regression_part_b(data_dict):
+
+    #Process data
+    pred_index = 39
+
+    X = (data_dict["X"] - np.ones((data_dict["N"], 1)) * data_dict["X"].mean(axis=0)) / data_dict["X"].std(axis=0)
+    y = X[:, pred_index]
+    X = np.delete(X, pred_index, axis=1)
+
+    N_attributes = X.shape[1]
+
+    attributeNames = data_dict["attributeNames"]
+    attributeNames = np.delete(attributeNames, pred_index, axis=0)
+
+    # Create crossvalidation
+    K_outer_fold = 5
+    K_inner_fold = 5
+    print()
+    print("Using K_outer & K_inner: ", K_outer_fold, " & ", K_inner_fold)
+    print()
+    CV = model_selection.KFold(K_outer_fold, shuffle=True)
+
+
+    lambdas = np.power(10., range(0,11))
+
+    weights_rlr = np.empty((N_attributes, K_outer_fold))
+
+
+    #hyperparameters values for neural network
+    h_values = [1, 5, 10, 15, 20, 50]
+
+    # Initialize empty arrays
+    Train_error_rlr = np.empty((K_outer_fold, 1))
+    Test_error_rlr = np.empty((K_outer_fold, 1))
+    Train_error_baseline = np.empty((K_outer_fold, 1))
+    Test_error_baseline = np.empty((K_outer_fold, 1))
+    Train_error_ann = np.empty((K_outer_fold, 1))
+    Test_error_ann = np.empty((K_outer_fold, 1))
+    cross_lambdas = []
+    cross_h = []
+
+    print("Y length: ", len(y))
+    print()
     figure()
-    rows = np.floor(np.sqrt(len(data_dict['attributeNames'][0:8])))
-    columns = np.ceil(float(len(data_dict['attributeNames'][0:8]))/rows)
-    for i in range(len(data_dict['attributeNames'][0:8])):
-        subplot(int(rows),int(columns),i+1)
-        hist(data_dict['X'][:,i],log=True)
-        #xlabel(str(i))
-        #xlabel(data_dict['attributeNames'][i])
-        if i==0: title('Historgrams of 8 word frequency attributes') 
-    plt.subplots_adjust(wspace=0.5)
+    plot(y)
     show()
 
-    #show last 3 attributes
-    figure()
-    rows=1
-    columns=3
-    for i in range(3):
-        subplot(int(rows),int(columns),i+1)
-        hist(data_dict['X'][:,-4+i:-3+i],log=True)
-        xlabel(data_dict['attributeNames'][-3+i], fontsize=8)
-        if i == 0: title('Histograms of 3 capital_run attributes')
-    plt.subplots_adjust(wspace=1)
-    show()
+    k = 0
+    for train_index, test_index in CV.split(X, y):
+        if k == 0:
+            print("Training length: ", len(train_index))
+            print("Test length: ", len(test_index))
+            print()
+
+        print("K=", k)
+
+        # Optimal lambda for regression
+        X_train = X[train_index]
+        y_train = y[train_index]
+        X_test = X[test_index]
+        y_test = y[test_index]
+
+        val_eror_opt, opt_lambda, mean_w_vs_lambda, train_err_vs_lambda, test_err_vs_lambda = rlr_validate(X_train,
+                                                                                                          y_train,
+                                                                                                          lambdas,
+                                                                                                          K_inner_fold)
+        print("Best lambda: ", opt_lambda)
+        cross_lambdas.append(opt_lambda)
+        Xtrans_y = X_train.T @ y_train
+        Xtrans_X = X_train.T @ X_train
+
+        # Estimate weights
+        lambda_I = opt_lambda * np.eye(N_attributes)
+        lambda_I[0, 0] = 0  # Do no regularize the bias term
+        weights_rlr[:, k] = np.linalg.solve(Xtrans_X + lambda_I, Xtrans_y).squeeze()
+
+        # MSE
+        Train_error_rlr[k] = np.square(y_train - X_train @ weights_rlr[:, k]).sum(axis=0) / y_train.shape[0]
+        Test_error_rlr[k] = np.square(y_test - X_test @ weights_rlr[:, k]).sum(axis=0) / y_test.shape[0]
+        print("Error linear: ", Test_error_rlr[k])
+
+        if k == K_outer_fold - 1:
+            figure(1)
+            plot(y_train, c='black')
+            plot(X_train @ weights_rlr[:, k], c='red')
+            figure(2)
+            plot(y_test, c='black')
+            plot(X_test @ weights_rlr[:, k], c='red')
+            show()
+            #Lambdas
+            figure(k, figsize=(12, 8))
+            subplot(1, 2, 1)
+            semilogx(lambdas, mean_w_vs_lambda.T[:, 1:], '.-')
+            xlabel('Regularization factor')
+            ylabel('Mean Coefficient Values')
+            grid()
+            subplot(1, 2, 2)
+            title('Optimal lambda: 1e{0}'.format(np.log10(opt_lambda)))
+            loglog(lambdas, train_err_vs_lambda.T, 'b.-', lambdas, test_err_vs_lambda.T, 'r.-')
+            xlabel('Regularization factor')
+            ylabel('Squared error (crossvalidation)')
+            legend(['Train error', 'Validation error'])
+            grid()
+            show()
+
+        #Baseline model
+
+
+        Train_error_baseline[k] = np.square(y_train - y_train.mean()).sum(axis=0) / y_train.shape[0]
+        Test_error_baseline[k] = np.square(y_test - y_test.mean()).sum(axis=0) / y_test.shape[0]
+        print("Error baseline: ", Test_error_baseline[k])
+
+        if k == K_outer_fold - 1:
+            figure(1)
+            plot(y_train, c='black')
+            plot([y_train.mean()] * y_train.shape[0], c='red')
+            figure(2)
+            plot(y_test, c='black')
+            plot([y_test.mean()] * y_test.shape[0], c='red')
+            show()
+
+        #Neural Network
+
+
+        X_train = torch.Tensor(X[train_index])
+        y_train = torch.Tensor(np.reshape(y[train_index],(len(train_index),1)))
+        X_test = torch.Tensor(X[test_index])
+        y_test = torch.Tensor(np.reshape(y[test_index],(len(test_index),1)))
+
+
+        n_hidden_units = ann_inner_folds(X_train, y_train, h_values, K_inner_fold)
+        print("Best h: ", n_hidden_units)
+        cross_h.append(n_hidden_units)
+        model = lambda: torch.nn.Sequential(
+            torch.nn.Linear(N_attributes, n_hidden_units),
+            torch.nn.Tanh(),  # activation function
+            torch.nn.Linear(n_hidden_units, 1))
+        loss = torch.nn.MSELoss()
+        net, final_loss, learning_curve = train_neural_net(model,loss,X=X_train,y=y_train,n_replicates=1,max_iter=10000)
+
+        # estimated class labels
+        y_train_est = net(X_train).detach().numpy()
+        y_test_est = net(X_test).detach().numpy()
+        Train_error_ann[k] = np.square(y_train - y_train_est).sum(axis=0) / y_train.shape[0]
+        Test_error_ann[k] = np.square(y_test - y_test_est).sum(axis=0) / y_test.shape[0]
+        print("Error ann: ", Test_error_ann[k])
+
+        if k == K_outer_fold - 1:
+            figure(1)
+            plot(y_train, c='black')
+            plot(y_train_est, c='red')
+            figure(2)
+            plot(y_test, c='black')
+            plot(y_test_est, c='red')
+            show()
+
+            weights = [net[i].weight.data.numpy().T for i in [0, 2]]
+            biases = [net[i].bias.data.numpy() for i in [0, 2]]
+            tf = [str(net[i]) for i in [0, 2]]
+            draw_neural_net(weights, biases, tf)
+
+        k += 1
+
+    print("Linear train error mean: ", Train_error_rlr.mean())
+    print("Linear test error mean: ", Test_error_rlr.mean())
+    print('--------------------------------------------------------------------------')
+    print("Baseline train error mean: ", Train_error_baseline.mean())
+    print("Baseline test error mean: ", Test_error_baseline.mean())
+    print('--------------------------------------------------------------------------')
+    print("Ann train error mean: ", Train_error_ann.mean())
+    print("Ann test error mean: ", Test_error_ann.mean())
+    print('--------------------------------------------------------------------------')
+    print("Best lambda: ", cross_lambdas[np.argmin(Test_error_rlr)], " | Error: ",
+          Test_error_rlr[np.argmin(Test_error_rlr)])
+    print("Best h: ", cross_h[np.argmin(Test_error_ann)], " | Error: ", Test_error_ann[np.argmin(Test_error_ann)])
+
+    #Linear weights
+    print('Regression weights in the last cross validation fold:')
+    for m in range(N_attributes):
+        print(attributeNames[m], np.round(weights_rlr[m, -1], 2))
+
+
+    # Evaluation
+    K_outer_fold = 5
+    K_inner_fold = 5
+
+    CV = model_selection.KFold(K_outer_fold, shuffle=True)
+
+
+    optimal_lambda = cross_lambdas[np.argmin(Test_error_rlr)]
+    weights_rlr = np.empty((N_attributes, K_outer_fold))
+
+    optimal_h = cross_h[np.argmin(Test_error_ann)]
+
+    # Initialize variables
+    y_rlr_real = []
+    y_rlr_pred = []
+    y_baseline_real = []
+    y_baseline_pred = []
+    y_ann_real = []
+    y_ann_pred = []
+
+    print("Using optimal lambda: ", optimal_lambda)
+    print("Using optimal h: ", optimal_h)
+
+    k = 0
+    for train_index, test_index in CV.split(X, y):
+        print("K=", k)
+
+        #Regression
+        X_train = X[train_index]
+        y_train = y[train_index]
+        X_test = X[test_index]
+        y_test = y[test_index]
+
+        Xtrans_y = X_train.T @ y_train
+        Xtrans_X = X_train.T @ X_train
+
+        lambda_I = optimal_lambda * np.eye(N_attributes)
+        lambda_I[0, 0] = 0
+        weights_rlr[:, k] = np.linalg.solve(Xtrans_X + lambda_I, Xtrans_y).squeeze()
+
+        y_rlr_real = y_rlr_real + list(y_test)
+        y_rlr_pred = y_rlr_pred + list(X_test @ weights_rlr[:, k])
+
+        #Baseline
+
+        y_baseline_real = y_baseline_real + list(y_test)
+        y_baseline_pred = y_baseline_pred + [y_test.mean()] * len(y_test)
+
+        #Neural Netwrok
+        X_train = torch.Tensor(X[train_index])
+        y_train = torch.Tensor(np.reshape(y[train_index],(len(train_index),1)))
+        X_test = torch.Tensor(X[test_index])
+        y_test = torch.Tensor(np.reshape(y[test_index],(len(test_index),1)))
+
+        n_hidden_units = optimal_h
+        model = lambda: torch.nn.Sequential(
+            torch.nn.Linear(N_attributes, n_hidden_units),
+            torch.nn.Tanh(),  # activation function
+            torch.nn.Linear(n_hidden_units, 1), )
+        loss = torch.nn.MSELoss()  # notice how this is now a mean-squared-error loss
+        net, final_loss, learning_curve = train_neural_net(model,loss,X=X_train,y=y_train,n_replicates=1,max_iter=10000)
+
+        y_train_est = net(X_train).detach().numpy()
+        y_test_est = net(X_test).detach().numpy()
+
+        y_network_real = y_ann_real + list(y_test.numpy()[:, 0])
+        y_network_pred = y_ann_pred + list(y_test_est[:, 0])
+
+        if k == K_outer_fold - 1:
+
+            weights = [net[i].weight.data.numpy().T for i in [0, 2]]
+            biases = [net[i].bias.data.numpy() for i in [0, 2]]
+            tf = [str(net[i]) for i in [0, 2]]
+            draw_neural_net(weights, biases, tf)
+
+        k += 1
+
+    print()
+    print('linear weights in last fold:')
+    for m in range(N_attributes):
+        print(attributeNames[m], np.round(weights_rlr[m, -1], 2))
+    print()
+
+    error_rlr_square = np.square(np.array(y_rlr_real) - np.array(y_rlr_pred))
+    error_baseline_square = np.square(np.array(y_baseline_real) - np.array(y_baseline_pred))
+    error_network_square = np.square(np.array(y_network_real) - np.array(y_network_pred))
+    print("Linear error mean: ", error_rlr_square.mean())
+    print("Baseline error mean: ", error_baseline_square.mean())
+    print("Ann error mean: ", error_network_square.mean())
+    print()
+
+    error_rlr_vs_baseline = error_rlr_square - error_baseline_square
+    error_rlr_vs_network = error_rlr_square - error_network_square
+    error_network_vs_baseline = error_network_square - error_baseline_square
+    print("Error linear vs baseline: ", error_rlr_vs_baseline.mean())
+    print("Error linear vs ann: ", error_rlr_vs_network.mean())
+    print("Error ann vs baseline: ", error_network_vs_baseline.mean())
+    print()
+
+    # Initialize parameters and run test appropriate for setup II
+    alpha = 0.05
+    rho = 1 / K_outer_fold
+    p_setupII, CI_setupII = correlated_ttest(error_rlr_vs_baseline, rho, alpha=alpha)
+    p2_setupII, CI2_setupII = correlated_ttest(error_rlr_vs_network, rho, alpha=alpha)
+    p3_setupII, CI3_setupII = correlated_ttest(error_network_vs_baseline, rho, alpha=alpha)
+    print("p (linear vs baseline) : ", p_setupII)
+    print("CI (linear vs baseline): ", CI_setupII)
+    print("p (linear vs ann): ", p2_setupII)
+    print("CI (linear vs ann): ", CI2_setupII)
+    print("p (ann vs baseline): ", p3_setupII)
+    print("CI (ann vs baseline): ", CI3_setupII)
+
+    return
