@@ -1,10 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from scipy.linalg import svd
 from matplotlib.pyplot import figure, plot, title, xlabel, ylabel, show, legend,boxplot,bar,xticks,grid,subplot,hist
 from matplotlib.pylab import semilogx
-import seaborn as sns
 from toolbox_02450 import rlr_validate, correlated_ttest, train_neural_net, draw_neural_net, mcnemar
 
 import torch
@@ -12,7 +10,6 @@ from sklearn import model_selection
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from matplotlib.pylab import loglog
-from scipy.stats import zscore
 
 def get_df(data_dir):
     '''
@@ -93,7 +90,7 @@ def regression_part_a(data_dict):
     N_attributes = X.shape[1]
 
     #weights
-    weights_rlr = np.empty((N_attributes, 1))
+    weights_rlr = np.zeros((N_attributes, 1))
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.30, shuffle=True)
 
@@ -120,37 +117,37 @@ def regression_part_a(data_dict):
 
     print('Linear weights:')
     for m in range(N_attributes):
-        print(attributeNames[m], np.round(weights_rlr[m, 0], ))
+        print(attributeNames[m], weights_rlr[m, 0])
 
     # Display the results
     figure()
-    title('Optimal lambda: 1e{0}'.format(np.log10(opt_lambda)))
+    title('Optimal lambda: '+str(opt_lambda))
     loglog(lambdas, train_error_lambda.T, 'b.-', lambdas, test_error_lambda.T, 'r.-')
-    xlabel('Regularization factor')
-    ylabel('Squared error (crossvalidation)')
+    xlabel('Regularization factor (lambda)')
+    ylabel('Squared error')
     legend(['Train error', 'Validation error'])
     grid()
     show()
 
 
-def ann_inner_folds(X, y, h_range, cvf = 10):
-    CV = model_selection.KFold(cvf, shuffle=True)
+def ann_inner_folds(X, y, h_list, cv_folds = 5):
+    CV = model_selection.KFold(cv_folds, shuffle=True)
     N_attributes = X.shape[1]
-    w = np.empty((N_attributes, cvf, len(h_range)))
-    train_error = np.empty((cvf, len(h_range)))
-    test_error = np.empty((cvf, len(h_range)))
-    f = 0
+    w = np.zeros((N_attributes, cv_folds, len(h_list)))
+    train_error = np.zeros((cv_folds, len(h_list)))
+    test_error = np.zeros((cv_folds, len(h_list)))
+    fold = 0
     for train_index, test_index in CV.split(X, y):
         X_train = torch.Tensor(X[train_index])
         y_train = torch.Tensor(y[train_index])
         X_test = torch.Tensor(X[test_index])
         y_test = torch.Tensor(y[test_index])
 
-        for ind in range(0, len(h_range)):
+        for ind in range(0, len(h_list)):
             model = lambda: torch.nn.Sequential(
-                torch.nn.Linear(N_attributes, h_range[ind]),
+                torch.nn.Linear(N_attributes, h_list[ind]),
                 torch.nn.Tanh(),  # activation function,
-                torch.nn.Linear(h_range[ind], 1))
+                torch.nn.Linear(h_list[ind], 1))
             loss = torch.nn.MSELoss()
             net, final_loss, learning_curve = train_neural_net(model,loss,X=X_train,y=y_train,n_replicates=1,max_iter=10000)
 
@@ -158,12 +155,12 @@ def ann_inner_folds(X, y, h_range, cvf = 10):
             y_train_est = net(X_train).detach().numpy()
             y_test_est = net(X_test).detach().numpy()
 
-            train_error[f, ind] = np.square(y_train - y_train_est).sum(axis=0) / y_train.shape[0]
-            test_error[f, ind] = np.square(y_test - y_test_est).sum(axis=0) / y_test.shape[0]
+            train_error[fold, ind] = np.square(y_train - y_train_est).sum(axis=0) / y_train.shape[0]
+            test_error[fold, ind] = np.square(y_test - y_test_est).sum(axis=0) / y_test.shape[0]
 
-        f = f + 1
+        fold = fold + 1
 
-    optimal_h = h_range[np.argmin(np.mean(test_error, axis=0))]
+    optimal_h = h_list[np.argmin(np.mean(test_error, axis=0))]
 
     return optimal_h
 
@@ -185,46 +182,38 @@ def regression_part_b(data_dict):
     # Create crossvalidation
     K_outer_fold = 5
     K_inner_fold = 5
-    print()
-    print("Using K_outer & K_inner: ", K_outer_fold, " & ", K_inner_fold)
-    print()
+
     CV = model_selection.KFold(K_outer_fold, shuffle=True)
 
 
+
     lambdas = np.power(10., range(0,11))
+    weights_rlr = np.zeros((N_attributes, K_outer_fold))
 
-    weights_rlr = np.empty((N_attributes, K_outer_fold))
 
-
-    #hyperparameters values for neural network
-    h_values = [1, 5, 10, 15, 20, 50]
-
-    # Initialize empty arrays
-    Train_error_rlr = np.empty((K_outer_fold, 1))
-    Test_error_rlr = np.empty((K_outer_fold, 1))
-    Train_error_baseline = np.empty((K_outer_fold, 1))
-    Test_error_baseline = np.empty((K_outer_fold, 1))
-    Train_error_ann = np.empty((K_outer_fold, 1))
-    Test_error_ann = np.empty((K_outer_fold, 1))
+    # Initialize arrays
+    Train_error_rlr = np.zeros((K_outer_fold, 1))
+    Test_error_rlr = np.zeros((K_outer_fold, 1))
+    Train_error_baseline = np.zeros((K_outer_fold, 1))
+    Test_error_baseline = np.zeros((K_outer_fold, 1))
+    Train_error_ann = np.zeros((K_outer_fold, 1))
+    Test_error_ann = np.zeros((K_outer_fold, 1))
     cross_lambdas = []
     cross_h = []
 
-    print("Y length: ", len(y))
-    print()
-    figure()
-    plot(y)
-    show()
+    # hyperparameters values for neural network
+    h_values = [1, 10, 20, 50, 100]
+
+
+
 
     k = 0
     for train_index, test_index in CV.split(X, y):
-        if k == 0:
-            print("Training length: ", len(train_index))
-            print("Test length: ", len(test_index))
-            print()
-
+        print('--------------------------------------------------------------------------')
         print("K=", k)
 
         # Optimal lambda for regression
+
         X_train = X[train_index]
         y_train = y[train_index]
         X_test = X[test_index]
@@ -234,7 +223,7 @@ def regression_part_b(data_dict):
                                                                                                           y_train,
                                                                                                           lambdas,
                                                                                                           K_inner_fold)
-        print("Best lambda: ", opt_lambda)
+        print("Optimal lambda: ", opt_lambda)
         cross_lambdas.append(opt_lambda)
         Xtrans_y = X_train.T @ y_train
         Xtrans_X = X_train.T @ X_train
@@ -247,25 +236,27 @@ def regression_part_b(data_dict):
         # MSE
         Train_error_rlr[k] = np.square(y_train - X_train @ weights_rlr[:, k]).sum(axis=0) / y_train.shape[0]
         Test_error_rlr[k] = np.square(y_test - X_test @ weights_rlr[:, k]).sum(axis=0) / y_test.shape[0]
-        print("Error linear: ", Test_error_rlr[k])
+        print("Error linear regression: ", Test_error_rlr[k])
 
-        if k == K_outer_fold - 1:
+        if k == K_outer_fold-1:
             figure(1)
+            title("Linear Regression, train predictions")
             plot(y_train, c='black')
             plot(X_train @ weights_rlr[:, k], c='red')
             figure(2)
+            title("Linear Regression, test predictins")
             plot(y_test, c='black')
             plot(X_test @ weights_rlr[:, k], c='red')
             show()
             #Lambdas
-            figure(k, figsize=(12, 8))
+            figure(k)
             subplot(1, 2, 1)
             semilogx(lambdas, mean_w_vs_lambda.T[:, 1:], '.-')
-            xlabel('Regularization factor')
-            ylabel('Mean Coefficient Values')
+            xlabel('Regularization factor (lambda)')
+            ylabel('Mean Coeff Values')
             grid()
             subplot(1, 2, 2)
-            title('Optimal lambda: 1e{0}'.format(np.log10(opt_lambda)))
+            title('Optimal lambda: ' +str(opt_lambda))
             loglog(lambdas, train_err_vs_lambda.T, 'b.-', lambdas, test_err_vs_lambda.T, 'r.-')
             xlabel('Regularization factor')
             ylabel('Squared error (crossvalidation)')
@@ -274,23 +265,22 @@ def regression_part_b(data_dict):
             show()
 
         #Baseline model
-
-
         Train_error_baseline[k] = np.square(y_train - y_train.mean()).sum(axis=0) / y_train.shape[0]
         Test_error_baseline[k] = np.square(y_test - y_test.mean()).sum(axis=0) / y_test.shape[0]
         print("Error baseline: ", Test_error_baseline[k])
 
-        if k == K_outer_fold - 1:
+        if k == K_outer_fold :
             figure(1)
+            title("Baseline model, train predictions")
             plot(y_train, c='black')
             plot([y_train.mean()] * y_train.shape[0], c='red')
             figure(2)
+            title("Baseline model, test predictions")
             plot(y_test, c='black')
             plot([y_test.mean()] * y_test.shape[0], c='red')
             show()
 
         #Neural Network
-
 
         X_train = torch.Tensor(X[train_index])
         y_train = torch.Tensor(np.reshape(y[train_index],(len(train_index),1)))
@@ -298,13 +288,14 @@ def regression_part_b(data_dict):
         y_test = torch.Tensor(np.reshape(y[test_index],(len(test_index),1)))
 
 
-        n_hidden_units = ann_inner_folds(X_train, y_train, h_values, K_inner_fold)
-        print("Best h: ", n_hidden_units)
-        cross_h.append(n_hidden_units)
+        units = ann_inner_folds(X_train, y_train, h_values, K_inner_fold)
+
+        print("Best h: ", units)
+        cross_h.append(units)
         model = lambda: torch.nn.Sequential(
-            torch.nn.Linear(N_attributes, n_hidden_units),
+            torch.nn.Linear(N_attributes, units),
             torch.nn.Tanh(),  # activation function
-            torch.nn.Linear(n_hidden_units, 1))
+            torch.nn.Linear(units, 1))
         loss = torch.nn.MSELoss()
         net, final_loss, learning_curve = train_neural_net(model,loss,X=X_train,y=y_train,n_replicates=1,max_iter=10000)
 
@@ -313,13 +304,15 @@ def regression_part_b(data_dict):
         y_test_est = net(X_test).detach().numpy()
         Train_error_ann[k] = np.square(y_train - y_train_est).sum(axis=0) / y_train.shape[0]
         Test_error_ann[k] = np.square(y_test - y_test_est).sum(axis=0) / y_test.shape[0]
-        print("Error ann: ", Test_error_ann[k])
+        print("Error neural network: ", Test_error_ann[k])
 
-        if k == K_outer_fold - 1:
+        if k == K_outer_fold-1:
             figure(1)
+            title("Neural Network, train predictions")
             plot(y_train, c='black')
             plot(y_train_est, c='red')
             figure(2)
+            title("Neural Network, test predictions")
             plot(y_test, c='black')
             plot(y_test_est, c='red')
             show()
@@ -351,14 +344,15 @@ def regression_part_b(data_dict):
 
 
     # Evaluation
+    print('--------------------------------------------------------------------------')
+    print("Evaluation")
     K_outer_fold = 5
-    K_inner_fold = 5
 
     CV = model_selection.KFold(K_outer_fold, shuffle=True)
 
 
     optimal_lambda = cross_lambdas[np.argmin(Test_error_rlr)]
-    weights_rlr = np.empty((N_attributes, K_outer_fold))
+    weights_rlr = np.zeros((N_attributes, K_outer_fold))
 
     optimal_h = cross_h[np.argmin(Test_error_ann)]
 
@@ -404,11 +398,11 @@ def regression_part_b(data_dict):
         X_test = torch.Tensor(X[test_index])
         y_test = torch.Tensor(np.reshape(y[test_index],(len(test_index),1)))
 
-        n_hidden_units = optimal_h
+        units = optimal_h
         model = lambda: torch.nn.Sequential(
-            torch.nn.Linear(N_attributes, n_hidden_units),
+            torch.nn.Linear(N_attributes, units),
             torch.nn.Tanh(),  # activation function
-            torch.nn.Linear(n_hidden_units, 1), )
+            torch.nn.Linear(units, 1), )
         loss = torch.nn.MSELoss()  # notice how this is now a mean-squared-error loss
         net, final_loss, learning_curve = train_neural_net(model,loss,X=X_train,y=y_train,n_replicates=1,max_iter=10000)
 
@@ -427,44 +421,38 @@ def regression_part_b(data_dict):
 
         k += 1
 
-    print()
-    print('linear weights in last fold:')
+    print('Regression weights in last fold of evaluation:')
     for m in range(N_attributes):
         print(attributeNames[m], np.round(weights_rlr[m, -1], 2))
-    print()
 
     error_rlr_square = np.square(np.array(y_rlr_real) - np.array(y_rlr_pred))
     error_baseline_square = np.square(np.array(y_baseline_real) - np.array(y_baseline_pred))
     error_network_square = np.square(np.array(y_network_real) - np.array(y_network_pred))
     print("Linear error mean: ", error_rlr_square.mean())
     print("Baseline error mean: ", error_baseline_square.mean())
-    print("Ann error mean: ", error_network_square.mean())
-    print()
+    print("Neural network error mean: ", error_network_square.mean())
 
     error_rlr_vs_baseline = error_rlr_square - error_baseline_square
     error_rlr_vs_network = error_rlr_square - error_network_square
     error_network_vs_baseline = error_network_square - error_baseline_square
     print("Error linear vs baseline: ", error_rlr_vs_baseline.mean())
-    print("Error linear vs ann: ", error_rlr_vs_network.mean())
-    print("Error ann vs baseline: ", error_network_vs_baseline.mean())
-    print()
+    print("Error linear vs neural network: ", error_rlr_vs_network.mean())
+    print("Error neural network vs baseline: ", error_network_vs_baseline.mean())
 
-    # Initialize parameters and run test appropriate for setup II
+    # test II
     alpha = 0.05
     rho = 1 / K_outer_fold
-    p_setupII, CI_setupII = correlated_ttest(error_rlr_vs_baseline, rho, alpha=alpha)
-    p2_setupII, CI2_setupII = correlated_ttest(error_rlr_vs_network, rho, alpha=alpha)
-    p3_setupII, CI3_setupII = correlated_ttest(error_network_vs_baseline, rho, alpha=alpha)
-    print("p (linear vs baseline) : ", p_setupII)
-    print("CI (linear vs baseline): ", CI_setupII)
-    print("p (linear vs ann): ", p2_setupII)
-    print("CI (linear vs ann): ", CI2_setupII)
-    print("p (ann vs baseline): ", p3_setupII)
-    print("CI (ann vs baseline): ", CI3_setupII)
+    p1,ci1 = correlated_ttest(error_rlr_vs_baseline, rho, alpha=alpha)
+    p2, ci2 = correlated_ttest(error_rlr_vs_network, rho, alpha=alpha)
+    p3, ci3= correlated_ttest(error_network_vs_baseline, rho, alpha=alpha)
+    print("p-value  Linear regression vs Baseline: ", p1)
+    print("Confidence Interval Linear Regression vs Baseline: ", ci1)
+    print("p-value Linear Regression vs Neural Network: ", p2)
+    print("Confidence Interval Linear regression vs Neural Network: ", ci2)
+    print("p-value Neural Network vs Baseline: ", p3)
+    print("Confidence Interval Neural Netowrk vs Baseline: ", ci3)
 
     return
-
-
 
 def classification_part(data_dict):
 
@@ -682,8 +670,3 @@ def classification_part(data_dict):
     print(weights.to_latex())
 
     return
-
-
-  
-
-    
