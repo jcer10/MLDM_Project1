@@ -5,11 +5,12 @@ from scipy.linalg import svd
 from matplotlib.pyplot import figure, plot, title, xlabel, ylabel, show, legend,boxplot,bar,xticks,grid,subplot,hist
 from matplotlib.pylab import semilogx
 import seaborn as sns
-from toolbox_02450 import rlr_validate, correlated_ttest, train_neural_net, draw_neural_net
+from toolbox_02450 import rlr_validate, correlated_ttest, train_neural_net, draw_neural_net, mcnemar
 
 import torch
 from sklearn import model_selection
 from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
 from matplotlib.pylab import loglog
 from scipy.stats import zscore
 
@@ -462,3 +463,227 @@ def regression_part_b(data_dict):
     print("CI (ann vs baseline): ", CI3_setupII)
 
     return
+
+
+
+def classification_part(data_dict):
+
+    # Processing data
+    X = (data_dict["X"] - np.ones((data_dict["N"], 1)) * data_dict["X"].mean(axis=0)) / data_dict["X"].std(axis=0)
+    y = data_dict['y']
+    attributeNames = data_dict['attributeNames']
+    classNames = data_dict['classNames']
+    N, M = X.shape
+    C = len(classNames)
+
+    K_outer = 5
+    K_inner = 5
+    CV = model_selection.KFold(K_outer,shuffle=True)
+
+    # Logistic Regression
+    lambdas = np.power(10., range(-3,3))
+    lr_models = []
+    E_lr_outer = np.zeros(K_outer)
+    y_lr_pred = []
+
+    # ANN
+    h_vals = np.arange(15,20)
+    ann_models =  []
+    E_ann_outer = np.zeros(K_outer)
+    y_ann_pred = []
+
+    # Baseline
+    E_bl_outer  = np.zeros(K_outer)
+    y_bl_pred = []
+
+    y_true = []
+
+    # Table for results
+    results = pd.DataFrame(columns=['i', 'h', 'E_ann_outer', 'lambda_i', 'E_lr_outer', 'E_bl_outer'])
+
+    # Optimal parameters for each outer fold
+    best_lambda = np.zeros(K_outer)
+    best_h = np.zeros(K_outer)
+
+    # Parameters value for ANN models
+    loss_fn = torch.nn.BCELoss()
+    max_iter = 10000
+
+    
+    # Create the Logistic Regression models
+    for i in range(len(lambdas)):
+        mdl = LogisticRegression(penalty='l2', C=1/lambdas[i], max_iter = max_iter)
+        lr_models.append(mdl)
+
+    # Create the Neural Networks models for binary classification
+    for i in range(len(h_vals)):
+        model_ann = lambda: torch.nn.Sequential(
+                            torch.nn.Linear(M, h_vals[i]),
+                            torch.nn.Tanh(),
+                            torch.nn.Linear(h_vals[i], 1),
+                            torch.nn.Sigmoid()
+                            )
+        ann_models.append(model_ann)
+
+
+    # Two-layer cross-validation
+    for k, (train_outer_index, test_outer_index) in enumerate(CV.split(X,y)): 
+        print('\nCrossvalidation outer-fold: {0}/{1}'.format(k+1,K_outer))    
+
+        X_train = X[train_outer_index,:]
+        y_train = y[train_outer_index]
+        X_test  = X[test_outer_index,:]
+        y_test  = y[test_outer_index]
+        
+        E_lr_inner = np.zeros((K_inner, len(lambdas)))
+        E_ann_inner = np.zeros((K_inner, len(h_vals)))
+
+
+        for j, (train_inner_index, test_inner_index) in enumerate(CV.split(X_train,y_train)): 
+            print("===============================================================")
+            print('\nCrossvalidation inner-fold: {0}/{1}'.format(j+1,K_inner)) 
+
+            X_train_inner = X_train[train_inner_index,:]
+            y_train_inner = y_train[train_inner_index]
+            X_test_inner  = X_train[test_inner_index,:]
+            y_test_inner  = y_train[test_inner_index]
+
+
+            # Train the models (Inner Loop)
+            # --------------------------------
+
+            # Logistic Regression'
+            for i in range(0, len(lambdas)):
+                lr_models[i].fit(X_train_inner, y_train_inner)
+                y_test_inner_est = lr_models[i].predict(X_test_inner).T
+                test_error_rate_inner = np.sum(y_test_inner_est != y_test_inner) / len(y_test_inner)
+                E_lr_inner[j, i] = test_error_rate_inner
+
+
+            # ANN
+            for i in range(len(h_vals)):
+                net, _, _ = train_neural_net(ann_models[i],
+                                                        loss_fn,
+                                                        X=torch.Tensor(X_train_inner),
+                                                        y=torch.tensor(y_train_inner, dtype=torch.float).unsqueeze(1),
+                                                        n_replicates=1,
+                                                        max_iter=max_iter)
+                
+                y_sigmoid = net(torch.tensor(X_test_inner, dtype=torch.float))
+                y_test_est_inner = (y_sigmoid>.5).type(dtype=torch.uint8).squeeze().data.numpy()
+                e_inner = (y_test_est_inner != y_test_inner)
+                E_ann_inner[j,i] = sum(e_inner) / len(y_test_inner)
+            
+
+            print("Logistic Regression Inner Loop Error Rate: ", E_lr_inner[j,:])
+            print("ANN Inner Loop Error Rate: ", E_ann_inner[j,:])
+            print("===============================================================")
+
+
+
+        # Optimal lambda
+        mean_error = np.mean(E_lr_inner, axis = 0)
+        opt_lambda_idx = np.argmin(mean_error)
+        
+        # Optimal h value
+        mean_error = np.mean(E_ann_inner, axis = 0)
+        opt_hval_idx = np.argmin(mean_error)
+
+
+
+        # Testing (outer loop)
+        # --------------------------------
+
+
+        # Logistic Regression
+        lr_models[opt_lambda_idx].fit(X_train, y_train)
+        
+        y_test_est = lr_models[opt_lambda_idx].predict(X_test).T
+        y_lr_pred.append(y_test_est)
+        test_error_rate = np.sum(y_test_est != y_test) / len(y_test)
+        E_lr_outer[k] = test_error_rate
+
+        best_lambda[k] = lambdas[opt_lambda_idx]
+
+
+
+        # ANN
+        net, final_loss, learning_curve = train_neural_net(ann_models[opt_hval_idx],
+                                                        loss_fn,
+                                                        X = torch.tensor(X_train, dtype=torch.float),
+                                                        y = torch.tensor(y_train, dtype=torch.float).unsqueeze(1),
+                                                        n_replicates=1,
+                                                        max_iter=max_iter)
+        
+        y_sigmoid = net(torch.tensor(X_test, dtype=torch.float))
+        y_test_est = (y_sigmoid>.5).type(dtype=torch.uint8).squeeze().data.numpy()
+        y_ann_pred.append(y_test_est)
+        e = (y_test_est != y_test)
+        E_ann_outer[k] = sum(e) / len(y_test)
+
+        best_h[k] = h_vals[opt_hval_idx]
+
+
+        # Baseline
+        y_test_est = np.ones(y_test.shape)*np.bincount(y_train.astype(int)).argmax()
+        y_bl_pred.append(y_test_est)
+        e = (y_test_est != y_test)
+        E_bl_outer[k] = sum(e) / len(y_test)
+
+        y_true.append(y_test)
+            
+        #results.append([k+1, best_h[k], E_ann_outer[k], best_lambda[k], E_lr_outer[k], E_bl_outer[k]])
+        results.loc[len(results)] = [k+1, best_h[k], E_ann_outer[k], best_lambda[k], E_lr_outer[k], E_bl_outer[k]]
+
+    
+    print(results)
+
+    y_true = np.concatenate(y_true)
+    y_lr_pred = np.concatenate(y_lr_pred)
+    y_ann_pred = np.concatenate(y_ann_pred)
+    y_bl_pred = np.concatenate(y_bl_pred)
+
+
+    # Comparison of the models
+
+    # lr vs ann
+    [thetahat, CI, p] = mcnemar(y_true, y_lr_pred, y_ann_pred)
+    print('lr vs ann')
+    print('theta: {0}'.format(thetahat), 'CI: {0}'.format(CI), 'p-value: {0}'.format(p))
+
+
+    # lr vs bl
+    [thetahat2, CI2, p2] = mcnemar(y_true, y_lr_pred, y_bl_pred)
+    print('lr vs bl')
+    print('theta:     {0}'.format(thetahat2), 'CI: {0}'.format(CI2), 'p-value: {0}'.format(p2))
+
+    # ann vs bl
+    [thetahat3, CI3, p3] = mcnemar(y_true, y_ann_pred, y_bl_pred)
+
+    print('ann vs bl')
+    print('theta:     {0}'.format(thetahat3), 'CI: {0}'.format(CI3), 'p-value: {0}'.format(p3))
+
+
+    # Final Logistic regression model
+
+    lambda_val = 0.1
+
+    lr_model = LogisticRegression(penalty='l2', C=1/lambda_val, max_iter = max_iter)
+    lr_model.fit(X, y)
+    y_train_est_final = lr_model.predict(X).T
+
+    w_est = lr_model.coef_[0]
+    w_est = [round(w, 4) for w in w_est]
+    
+    weights = pd.DataFrame(columns = attributeNames)
+    weights.loc[len(weights)] = w_est
+    weights = weights.T
+
+    print(weights.to_latex())
+
+    return
+
+
+  
+
+    
